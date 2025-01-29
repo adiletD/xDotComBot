@@ -1,5 +1,7 @@
 from playwright.sync_api import sync_playwright
 import time
+from dotenv import load_dotenv
+import os
 
 def login_to_x(username, email, password, user_data_dir="./chrome-data"):
     with sync_playwright() as playwright:
@@ -50,8 +52,21 @@ def login_to_x(username, email, password, user_data_dir="./chrome-data"):
         input("Press Enter to close the browser...")
         browser.close()
 
+def login_to_x():
+    # Load environment variables
+    load_dotenv()
+    
+    # Get credentials from environment variables
+    username = os.getenv('X_USERNAME')
+    email = os.getenv('X_EMAIL')
+    password = os.getenv('X_PASSWORD')
+    
+    # Validate that all required credentials are present
+    if not all([username, email, password]):
+        raise ValueError("Missing required credentials in .env file. Please check .env.example for required variables.")
+    
+    # Your existing login logic here
+    # ...
+
 if __name__ == "__main__":
-    username = input("Enter your username: ")
-    email = input("Enter your email: ")
-    password = input("Enter your password: ")
-    login_to_x(username, email, password) 
+    login_to_x() 
