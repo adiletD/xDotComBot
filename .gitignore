@@ -25,6 +25,8 @@ wheels/
 venv/
 ENV/
 .env
+.venv/
+/.venv
 
 # Browser Data
 chrome-data/
@@ -36,4 +38,7 @@ browser-data/
 .vscode/
 *.swp
 *.swo
-.DS_Store 
+.DS_Store
+
+# Project specific
+/conversations 
