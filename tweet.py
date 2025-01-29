@@ -178,12 +178,48 @@ class XAutomation:
         if self.playwright:
             self.playwright.stop()
 
+    def post_thread(self, tweets):
+        """
+        Post a thread of tweets
+        """
+        try:
+            # Click tweet button to open compose window
+            tweet_input = self.page.wait_for_selector('[data-testid="tweetTextarea_0"]')
+            tweet_input.fill(tweets[0])
+            
+            # Add remaining tweets to thread
+            for tweet in tweets[1:]:
+                # Click the + button to add new tweet
+                add_button = self.page.wait_for_selector('[data-testid="addButton"]')
+                add_button.click()
+                
+                # Wait for and fill the new tweet textarea
+                tweet_number = tweets.index(tweet)
+                tweet_input = self.page.wait_for_selector(f'[data-testid="tweetTextarea_{tweet_number}"]')
+                tweet_input.fill(tweet)
+                time.sleep(1)  # Small wait between tweets
+            
+            # Wait for and click Post all button - using the correct selector
+            time.sleep(1)  # Wait for button to become interactive
+            post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')  # Changed from tweetButtonInline
+            print(f"Found button with text: {post_button.inner_text()}")
+            post_button.click()
+            print("Clicked post button")
+            
+            # Wait for post to complete
+            time.sleep(3)
+            
+        except Exception as e:
+            print(f"Error posting thread: {e}")
+
+
 def display_menu():
     print("\n=== X Automation Menu ===")
     print("1. Post a text tweet")
     print("2. Post a tweet with image")
-    print("3. Exit")
-    return input("Choose an option (1-3): ")
+    print("3. Post a thread of tweets")
+    print("4. Exit")
+    return input("Choose an option (1-4): ")
 
 def main():
     bot = XAutomation()
@@ -204,6 +240,17 @@ def main():
             bot.post_tweet_with_image(tweet_text, image_path)
             
         elif choice == "3":
+            # tweet_texts = input("\nEnter the tweet texts separated by commas: ").split(',')
+            tweet_texts = [
+    "1/7 Let's talk about UFC gloves! A fascinating journey from bare knuckles to modern MMA gear. 🥊👊",
+    "2/7 In the early days (UFC 1-4), fighters went bare-knuckle! It was raw and controversial. No gloves, no rules! 👊💥",
+    "3/7 Some fighters like Art Jimmerson showed up wearing ONE boxing glove! Talk about unique style. 🥊😅",
+    # ... more tweets
+]
+            print("\nPosting your thread of tweets...")
+            bot.post_thread(tweet_texts)
+            
+        elif choice == "4":
             print("\nClosing the browser...")
             bot.close()
             break
