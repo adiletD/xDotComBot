@@ -7,23 +7,28 @@ import tempfile
 from urllib.parse import urlparse
 
 class GoogleImageFinder:
-    def __init__(self):
-        self._playwright = None
-        self._browser = None
+    def __init__(self, browser=None):
+        self._browser = browser
         self.page = None
+        self._owns_browser = browser is None
         
     def start(self):
         """Initialize the browser"""
-        self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(headless=False)
+        if self._owns_browser:
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(headless=False)
         self.page = self._browser.new_page()
         
     def close(self):
         """Clean up resources"""
-        if self._browser:
-            self._browser.close()
-        if self._playwright:
-            self._playwright.stop()
+        if self.page:
+            self.page.close()
+        # Only close browser if we created it
+        if self._owns_browser:
+            if self._browser:
+                self._browser.close()
+            if self._playwright:
+                self._playwright.stop()
             
     def search_image(self, query):
         """Search for an image and return its URL"""
