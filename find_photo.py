@@ -141,17 +141,39 @@ class GoogleImageFinder:
     def download_single_image(self, url, filename_base, output_dir="thread_images"):
         """Download a single image from a direct URL"""
         try:
-            ext = '.jpg'
-            if url.lower().endswith(('.png', '.gif', '.webp')):
-                ext = os.path.splitext(url)[1]
+            # Create output directory if it doesn't exist
+            os.makedirs(output_dir, exist_ok=True)
             
+            # Download image to temporary file
+            downloaded_path = self._download_image(url)
+            if not downloaded_path:
+                print("Failed to download image from URL")
+                return None
+            
+            # Get extension from downloaded file
+            ext = os.path.splitext(downloaded_path)[1] or '.jpg'
+            
+            # Create final filename and path
             filename = f"{filename_base}{ext}"
             filepath = os.path.join(output_dir, filename)
             
-            downloaded_path = self._download_image(url)
-            if downloaded_path:
+            # Move file to final location
+            try:
                 os.replace(downloaded_path, filepath)
-                return filepath
+                
+                # Verify file exists and has content
+                if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                    return filepath
+                else:
+                    print("File verification failed after download")
+                    return None
+                
+            except Exception as e:
+                print(f"Error moving downloaded file: {e}")
+                # Clean up temporary file if move failed
+                if os.path.exists(downloaded_path):
+                    os.unlink(downloaded_path)
+                return None
             
         except Exception as e:
             print(f"Error downloading image: {e}")
@@ -161,21 +183,50 @@ def main():
     finder = GoogleImageFinder()
     finder.start()
     
-    # Example queries
-    queries = [
-        "UFC gloves evolution history",
-        "Art Jimmerson one glove UFC 1",
-        "Modern UFC gloves"
-    ]
-    
     try:
-        # Download images and get local paths
-        local_paths = finder.download_images_for_thread(queries)
-        print("\nDownloaded images:")
-        for i, path in enumerate(local_paths, 1):
-            print(f"{i}. {path}")
+        while True:
+            print("\nImage Download Options:")
+            print("1. Download multiple images from search queries")
+            print("2. Download single image from URL")
+            print("3. Exit")
+            
+            choice = input("\nEnter your choice (1-3): ")
+            
+            if choice == "1":
+                # Example queries
+                queries = [
+                    "UFC gloves evolution history",
+                    "Art Jimmerson one glove UFC 1",
+                    "Modern UFC gloves"
+                ]
+                
+                # Download images and get local paths
+                local_paths = finder.download_images_for_thread(queries)
+                print("\nDownloaded images:")
+                for i, path in enumerate(local_paths, 1):
+                    print(f"{i}. {path}")
+                    
+            elif choice == "2":
+                # Test single image download
+                url = input("\nEnter image URL: ")
+                filename = input("Enter base filename (without extension): ")
+                output_dir = input("Enter output directory (press Enter for 'thread_images'): ").strip() or "thread_images"
+                
+                result = finder.download_single_image(url, filename, output_dir)
+                if result:
+                    print(f"\nSuccess! Image downloaded to: {result}")
+                else:
+                    print("\nFailed to download image")
+                    
+            elif choice == "3":
+                print("\nExiting...")
+                break
+                
+            else:
+                print("\nInvalid choice. Please try again.")
+                
     finally:
-        finder.close() 
+        finder.close()
 
 if __name__ == "__main__":
     main()

@@ -134,7 +134,6 @@ class ThreadManager:
     
     def _handle_images(self, thread_data, browser):
         """Download images using either custom URLs or image queries"""
-        self.thread_data = thread_data  # Store for use in _try_image_search
         finder = GoogleImageFinder(browser=browser)
         finder.start()
         final_paths = []
@@ -144,12 +143,12 @@ class ThreadManager:
                 thread_data['image_queries'], 
                 thread_data['custom_urls']
             )):
+                images_dir = os.path.join(thread_data['thread_dir'], 'images')
                 current_path = None
                 
                 # Try custom URL first if provided
                 if custom_url and custom_url.strip():
                     print(f"\nUsing custom URL for tweet {i+1}")
-                    images_dir = os.path.join(thread_data['thread_dir'], 'images')
                     current_path = finder.download_single_image(
                         url=custom_url,
                         filename_base=f"tweet_{i}",
@@ -159,7 +158,7 @@ class ThreadManager:
                 # Fall back to image search if no custom URL or download failed
                 if not current_path:
                     print(f"\nSearching for image {i+1}: {query}")
-                    current_path = self._try_image_search(finder, query, i)
+                    current_path = self._try_image_search(finder, query, i, thread_data['thread_dir'])
                 
                 # Handle the result
                 if current_path:
@@ -167,19 +166,50 @@ class ThreadManager:
                     if not self._confirm_image(i+1):
                         new_url = input("Enter alternative image URL (or press Enter to skip): ")
                         if new_url and new_url.strip():
-                            new_path = finder.download_single_image(new_url, f"tweet_{i}")
-                            if new_path:
+                            print(f"Attempting to download from URL: {new_url}")
+                            
+                            # Remove old image first
+                            if current_path and os.path.exists(current_path):
+                                try:
+                                    os.remove(current_path)
+                                    print(f"Successfully removed old image: {current_path}")
+                                except Exception as e:
+                                    print(f"Warning: Could not remove old image: {e}")
+                            
+                            # Add delay after deletion
+                            time.sleep(1)
+                            
+                            # Then download new image
+                            new_path = finder.download_single_image(
+                                url=new_url,
+                                filename_base=f"tweet_{i}",
+                                output_dir=images_dir
+                            )
+                            print(f"Download result path: {new_path}")
+                            
+                            if new_path and os.path.exists(new_path):
                                 current_path = new_path
+                                final_paths.append(current_path)
                                 print(f"Successfully updated image for tweet {i+1}")
-                    final_paths.append(current_path)
+                            else:
+                                print(f"Failed to download alternative image. Path exists: {os.path.exists(new_path) if new_path else 'No path returned'}")
+                    else:
+                        final_paths.append(current_path)
                 else:
                     print(f"Failed to get image for tweet {i+1}")
                     new_url = input("Enter alternative image URL (or press Enter to skip): ")
                     if new_url and new_url.strip():
-                        new_path = finder.download_single_image(new_url, f"tweet_{i}")
-                        if new_path:
-                            final_paths.append(new_path)
+                        new_path = finder.download_single_image(
+                            url=new_url,
+                            filename_base=f"tweet_{i}",
+                            output_dir=images_dir
+                        )
+                        if new_path and os.path.exists(new_path):
+                            current_path = new_path
+                            final_paths.append(current_path)
                             print(f"Successfully added image for tweet {i+1}")
+                        else:
+                            print("Failed to download alternative image")
                 
                 time.sleep(2)
             
@@ -198,13 +228,12 @@ class ThreadManager:
     def _get_retry_confirmation(self):
         return input("\nWould you like to try generating the thread again? (y/n): ").lower() == 'y'
 
-    def _try_image_search(self, finder, query, index):
+    def _try_image_search(self, finder, query, index, thread_dir):
         """Try to find and download an image using the search query"""
         try:
             url = finder.search_image(query)
             if url and not url.startswith('data:'):
-                # Use the thread-specific images directory
-                images_dir = os.path.join(self.thread_data['thread_dir'], 'images')
+                images_dir = os.path.join(thread_dir, 'images')
                 return finder.download_single_image(
                     url=url,
                     filename_base=f"tweet_{index}",
