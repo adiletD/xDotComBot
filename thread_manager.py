@@ -133,7 +133,6 @@ class ThreadManager:
         }
     
     def _handle_images(self, thread_data, browser):
-        """Download images using either custom URLs or image queries"""
         finder = GoogleImageFinder(browser=browser)
         finder.start()
         final_paths = []
@@ -146,7 +145,7 @@ class ThreadManager:
                 images_dir = os.path.join(thread_data['thread_dir'], 'images')
                 current_path = None
                 
-                # Try custom URL first if provided
+                # Initial image download (either custom URL or search)
                 if custom_url and custom_url.strip():
                     print(f"\nUsing custom URL for tweet {i+1}")
                     current_path = finder.download_single_image(
@@ -155,61 +154,53 @@ class ThreadManager:
                         output_dir=images_dir
                     )
                 
-                # Fall back to image search if no custom URL or download failed
                 if not current_path:
                     print(f"\nSearching for image {i+1}: {query}")
-                    current_path = self._try_image_search(finder, query, i, thread_data['thread_dir'])
+                    try:
+                        current_path = self._try_image_search(finder, query, i, thread_data['thread_dir'])
+                    except Exception as e:
+                        print(f"Error during image search: {e}")
+                        print("Falling back to manual image input...")
+                        current_path = None
                 
-                # Handle the result
-                if current_path:
-                    print(f"Downloaded image for tweet {i+1}: {current_path}")
-                    if not self._confirm_image(i+1):
-                        new_url = input("Enter alternative image URL (or press Enter to skip): ")
-                        if new_url and new_url.strip():
-                            print(f"Attempting to download from URL: {new_url}")
-                            
-                            # Remove old image first
-                            if current_path and os.path.exists(current_path):
-                                try:
-                                    os.remove(current_path)
-                                    print(f"Successfully removed old image: {current_path}")
-                                except Exception as e:
-                                    print(f"Warning: Could not remove old image: {e}")
-                            
-                            # Add delay after deletion
-                            time.sleep(1)
-                            
-                            # Then download new image
-                            new_path = finder.download_single_image(
-                                url=new_url,
-                                filename_base=f"tweet_{i}",
-                                output_dir=images_dir
-                            )
-                            print(f"Download result path: {new_path}")
-                            
-                            if new_path and os.path.exists(new_path):
-                                current_path = new_path
-                                final_paths.append(current_path)
-                                print(f"Successfully updated image for tweet {i+1}")
-                            else:
-                                print(f"Failed to download alternative image. Path exists: {os.path.exists(new_path) if new_path else 'No path returned'}")
-                    else:
-                        final_paths.append(current_path)
-                else:
-                    print(f"Failed to get image for tweet {i+1}")
-                    new_url = input("Enter alternative image URL (or press Enter to skip): ")
-                    if new_url and new_url.strip():
-                        new_path = finder.download_single_image(
-                            url=new_url,
-                            filename_base=f"tweet_{i}",
-                            output_dir=images_dir
-                        )
-                        if new_path and os.path.exists(new_path):
-                            current_path = new_path
+                # Start the retry loop regardless of how we got here
+                while True:
+                    if current_path:
+                        print(f"Downloaded image for tweet {i+1}: {current_path}")
+                        if self._confirm_image(i+1):
                             final_paths.append(current_path)
-                            print(f"Successfully added image for tweet {i+1}")
-                        else:
-                            print("Failed to download alternative image")
+                            break
+                    
+                    # No image or user rejected the image, get new URL
+                    new_url = input("Enter alternative image URL (or press Enter to skip): ")
+                    if not new_url.strip():
+                        break
+                        
+                    print(f"Attempting to download from URL: {new_url}")
+                    
+                    # Remove old image if it exists
+                    if current_path and os.path.exists(current_path):
+                        try:
+                            os.remove(current_path)
+                            print(f"Successfully removed old image: {current_path}")
+                        except Exception as e:
+                            print(f"Warning: Could not remove old image: {e}")
+                    
+                    time.sleep(1)
+                    
+                    # Try new download
+                    new_path = finder.download_single_image(
+                        url=new_url,
+                        filename_base=f"tweet_{i}",
+                        output_dir=images_dir
+                    )
+                    
+                    if new_path and os.path.exists(new_path):
+                        current_path = new_path
+                        print(f"Successfully downloaded new image for tweet {i+1}")
+                    else:
+                        print("Failed to download image. Try another URL or press Enter to skip.")
+                        current_path = None
                 
                 time.sleep(2)
             
