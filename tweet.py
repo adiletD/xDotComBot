@@ -7,6 +7,9 @@ import requests
 from urllib.parse import urlparse
 from pathlib import Path
 from find_photo import GoogleImageFinder
+from datetime import datetime
+import sys
+# from thread_manager import ThreadManager
 
 class XAutomation:
     def __init__(self, user_data_dir="./chrome-data"):
@@ -178,70 +181,61 @@ class XAutomation:
         if self.playwright:
             self.playwright.stop()
 
-    def post_thread(self, tweets, image_queries=None):
+    def post_thread(self, tweets, image_paths=None):
         try:
             # Navigate to X
             self.page.goto('https://twitter.com/home')
             time.sleep(3)
             print("Navigated to X")
             
-            # If we have image queries, get the images first
-            image_paths = []
-            if image_queries:
-                finder = GoogleImageFinder(browser=self.browser)
-                finder.start()
-                try:
-                    image_paths = finder.download_images_for_thread(image_queries)
-                finally:
-                    finder.close()
-
-            print("Downloaded images")
-            
             # Post first tweet
             tweet_input = self.page.wait_for_selector('[data-testid="tweetTextarea_0"]')
+            # tweet_input.click()  # Need to click first
             tweet_input.fill(tweets[0])
+            # time.sleep(1)
             
             # Handle first image if available
             if image_paths and len(image_paths) > 0:
-                file_input = self.page.locator('[data-testid="fileInput"]').first
-                file_input.set_input_files(image_paths[0])
+                print(f"Setting input files for image {image_paths[0]}")
+                file_input = 'input[accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime"]'
+                self.page.set_input_files(file_input, image_paths[0])
+                # file_input.set_input_files(image_paths[0])
                 time.sleep(2)
             
             # After first tweet, click the button to create a thread
-            create_thread_button = self.page.locator('[data-testid="addButton"]').first
+            print("Clicking the add button to create a thread")
+            create_thread_button = self.page.wait_for_selector('[data-testid="addButton"]')
             create_thread_button.click()
             time.sleep(2)
             
             # Now add remaining tweets to the thread
             for i in range(1, len(tweets)):
+                print(f"Adding tweet {i+1} to the thread")
                 # Get the correct tweet box for the thread
-                new_tweet_box = self.page.locator(f'[data-testid="tweetTextarea_{i}"]').first
-                new_tweet_box.click()
+                new_tweet_box = self.page.wait_for_selector(f'[data-testid="tweetTextarea_{i}"]')
+                # new_tweet_box.click()
                 new_tweet_box.fill(tweets[i])
                 time.sleep(1)
                 
                 # Handle image for this tweet if available
                 if image_paths and i < len(image_paths):
-                    # Find the file input within the current tweet's composition area
-                    current_tweet = self.page.locator(f'[data-testid="tweetTextarea_{i}"]')
-                    file_input = current_tweet.locator('xpath=./following::input[@data-testid="fileInput"]').first
-                    file_input.set_input_files(image_paths[i])
-                    time.sleep(2)
+                    # Check if image exists for this specific tweet
+                    image_path = image_paths[i]
+                    image_name = Path(image_path).name
+                    if f"tweet_{i}" in image_name and os.path.exists(image_path):
+                        current_tweet = self.page.locator(f'[data-testid="tweetTextarea_{i}"]')
+                        file_input = current_tweet.locator('xpath=./following::input[@data-testid="fileInput"]').first
+                        file_input.set_input_files(image_path)
+                        time.sleep(1)
                 
-                # If there are more tweets to add, click the appropriate append button
+                # If there are more tweets to add, click the append button
                 if i < len(tweets) - 1:
-                    try:
-                        # Try to find the appendButton first (used for the second tweet)
-                        append_button = self.page.locator('[data-testid="appendButton"]').first
-                        append_button.click()
-                    except:
-                        # If appendButton is not found, look for the plus button to add more tweets
-                        plus_button = self.page.locator('[aria-label="Add post"]').first
-                        plus_button.click()
-                    time.sleep(2)
+                    add_button = self.page.wait_for_selector('[data-testid="addButton"]')
+                    add_button.click()
+                    time.sleep(1)
             
-            # Post the entire thread
-            post_button = self.page.locator('[data-testid="tweetButton"]').first
+           # Post the entire thread
+            post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')  # Changed from tweetButtonInline
             post_button.click()
             time.sleep(3)
             
@@ -260,47 +254,81 @@ def display_menu():
     return input("Choose an option (1-4): ")
 
 def main():
-    bot = XAutomation()
-    bot.start()
-    
-    while True:
-        choice = display_menu()
+    # Test post_thread directly
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        # Test tweets
+        tweets = [
+            "1/7 Test tweet one",
+            "2/7 Test tweet two",
+            "3/7 Test tweet three",
+            "4/7 Test tweet four",
+            "5/7 Test tweet five",
+            "6/7 Test tweet six",
+            "7/7 Test tweet seven"
+        ]
         
-        if choice == "1":
-            tweet_text = input("\nWhat would you like to tweet? ")
-            print("\nPosting your tweet...")
-            bot.post_tweet(tweet_text)
-            
-        elif choice == "2":
-            tweet_text = input("\nWhat would you like to tweet? ")
-            image_path = input("Enter the image path or URL: ")
-            print("\nPosting your tweet with image...")
-            bot.post_tweet_with_image(tweet_text, image_path)
-            
-        elif choice == "3":
-            # tweet_texts = input("\nEnter the tweet texts separated by commas: ").split(',')
-            tweet_texts = [
-    "1/7 Let's talk about UFC gloves! A fascinating journey from bare knuckles to modern MMA gear. 🥊👊",
-    "2/7 In the early days (UFC 1-4), fighters went bare-knuckle! It was raw and controversial. No gloves, no rules! 👊💥",
-    "3/7 Some fighters like Art Jimmerson showed up wearing ONE boxing glove! Talk about unique style. 🥊😅",
-    # ... more tweets
+        # Initialize XAutomation
+        bot = XAutomation()
+        bot.start()
+        
+        try:
+            # Test post_thread with some sample images
+            image_paths = [
+                "threads/thread_20250130_154145/images/tweet_0.png",
+                "threads/thread_20250130_154145/images/tweet_1.jpg",
+                "threads/thread_20250130_154145/images/tweet_2.webp",
+                "threads/thread_20250130_154145/images/tweet_3.jpg",
+                "threads/thread_20250130_154145/images/tweet_4.jpg",
+                "threads/thread_20250130_154145/images/tweet_5.jpg",
+                "threads/thread_20250130_154145/images/tweet_6.jpg"
             ]
-            image_queries = [
-        "UFC 1 no gloves fighting historical",
-        "UFC gloves evolution 1997",
-        "Modern UFC gloves design"
-    ]
             
-            print("\nPosting your thread of tweets...")
-            bot.post_thread(tweet_texts, image_queries)
+            print("Testing post_thread function...")
+            bot.post_thread(tweets=tweets, image_paths=image_paths)
             
-        elif choice == "4":
-            print("\nClosing the browser...")
+        except Exception as e:
+            print(f"Error during test: {e}")
+        finally:
             bot.close()
-            break
+        return
+
+    # # Original main code
+    # bot = XAutomation()
+    
+    # # manager = ThreadManager()
+
+
+    # while True:
+    #     print("\nOptions:")
+    #     print("1. Create and post a new thread")
+    #     print("2. Post from an existing thread file")
+    #     print("3. Generate thread preview only")
+    #     print("4. Exit")
+        
+    #     choice = input("\nChoice: ")
+        
+    #     if choice == "1":
+    #         topic = input("\nWhat would you like the thread to be about? ")
+    #         manager.create_and_post_thread(topic)
             
-        else:
-            print("\nInvalid option. Please try again.")
+    #     elif choice == "2":
+    #         thread_file = input("\nEnter the path to the thread file: ")
+    #         if os.path.exists(thread_file):
+    #             manager.post_from_file(thread_file)
+    #         else:
+    #             print("\nFile not found!")
+                
+    #     elif choice == "3":
+    #         topic = input("\nWhat would you like the thread to be about? ")
+    #         manager.preview_thread(topic)
+            
+    #     elif choice == "4":
+    #         print("\nClosing the browser...")
+    #         bot.close()
+    #         break
+            
+    #     else:
+    #         print("\nInvalid option. Please try again.")
 
 if __name__ == "__main__":
     main()

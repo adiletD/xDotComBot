@@ -5,6 +5,8 @@ import os
 import requests
 import tempfile
 from urllib.parse import urlparse
+from datetime import datetime
+import re
 
 class GoogleImageFinder:
     def __init__(self, browser=None):
@@ -57,41 +59,38 @@ class GoogleImageFinder:
             print(f"Error searching for image: {e}")
             return None 
 
-    def download_images_for_thread(self, queries, output_dir="thread_images"):
-        """
-        Search for images and download them to a local folder with ordered names.
-        Returns a list of local file paths to the downloaded images.
-        """
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
+    def download_images_for_thread(self, queries, thread_id=None, output_dir="thread_images"):
+        thread_id = thread_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        thread_dir = os.path.join(output_dir, f"thread_{thread_id}")
+        os.makedirs(thread_dir, exist_ok=True)
         
-        local_paths = []
-        for i, query in enumerate(queries, 1):
-            print(f"Searching for: {query}")
+        local_paths = [None] * len(queries)  # Initialize with None placeholders
+        
+        for i, query in enumerate(queries):
+            print(f"Searching for image {i+1}/{len(queries)}: {query}")
             url = self.search_image(query)
-            if url:
-                # Generate filename based on order
-                ext = '.jpg'  # Default extension
+            
+            if url and not url.startswith('data:'):
+                ext = '.jpg'
                 if url.lower().endswith(('.png', '.gif', '.webp')):
                     ext = os.path.splitext(url)[1]
                 filename = f"tweet_{i}{ext}"
-                filepath = os.path.join(output_dir, filename)
+                filepath = os.path.join(thread_dir, filename)
                 
-                # Download the image
-                if url.startswith('data:'):
-                    print(f"Skipping data URL for query: {query}")
-                    continue
-                    
                 downloaded_path = self._download_image(url)
                 if downloaded_path:
-                    # Move the temp file to our desired location
                     os.replace(downloaded_path, filepath)
-                    local_paths.append(filepath)
-                    print(f"Downloaded image to: {filepath}")
-                
-            time.sleep(2)  # Delay between searches
+                    local_paths[i] = filepath
+                    print(f"✓ Downloaded image {i+1}")
+                else:
+                    print(f"✗ Failed to download image {i+1}")
+            else:
+                print(f"✗ No valid image URL found for tweet {i+1}")
+            
+            time.sleep(2)
         
-        return local_paths 
+        # Remove None values while maintaining order
+        return [path for path in local_paths if path is not None]
 
     def _download_image(self, url):
         """Download image from URL to a temporary file with proper headers."""
@@ -138,6 +137,26 @@ class GoogleImageFinder:
         except Exception as e:
             print(f"Error downloading image: {e}")
             return None
+
+    def download_single_image(self, url, filename_base, output_dir="thread_images"):
+        """Download a single image from a direct URL"""
+        try:
+            ext = '.jpg'
+            if url.lower().endswith(('.png', '.gif', '.webp')):
+                ext = os.path.splitext(url)[1]
+            
+            filename = f"{filename_base}{ext}"
+            filepath = os.path.join(output_dir, filename)
+            
+            downloaded_path = self._download_image(url)
+            if downloaded_path:
+                os.replace(downloaded_path, filepath)
+                return filepath
+            
+        except Exception as e:
+            print(f"Error downloading image: {e}")
+            return None
+
 def main():
     finder = GoogleImageFinder()
     finder.start()
