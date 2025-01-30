@@ -284,12 +284,14 @@ class XAutomation:
                     add_button.click(force=True)
                     time.sleep(2)
             
+            time.sleep(2)
             # Post the entire thread
             post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')
             post_button.click()
             time.sleep(3)
             
             print("Thread posted successfully!")
+            display_menu()
             
         except Exception as e:
             print(f"Error posting thread: {e}")
