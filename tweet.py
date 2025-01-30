@@ -223,16 +223,21 @@ class XAutomation:
                 # Handle image for this tweet if available
                 if image_paths and i < len(image_paths):
                     # Find the file input within the current tweet's composition area
-                    # Look for the file input that's after the current tweet textarea
                     current_tweet = self.page.locator(f'[data-testid="tweetTextarea_{i}"]')
                     file_input = current_tweet.locator('xpath=./following::input[@data-testid="fileInput"]').first
                     file_input.set_input_files(image_paths[i])
                     time.sleep(2)
                 
-                # If there are more tweets to add, click the append button
+                # If there are more tweets to add, click the appropriate append button
                 if i < len(tweets) - 1:
-                    append_button = self.page.locator('[data-testid="appendButton"]').first
-                    append_button.click()
+                    try:
+                        # Try to find the appendButton first (used for the second tweet)
+                        append_button = self.page.locator('[data-testid="appendButton"]').first
+                        append_button.click()
+                    except:
+                        # If appendButton is not found, look for the plus button to add more tweets
+                        plus_button = self.page.locator('[aria-label="Add post"]').first
+                        plus_button.click()
                     time.sleep(2)
             
             # Post the entire thread
