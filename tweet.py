@@ -6,20 +6,21 @@ import tempfile
 import requests
 from urllib.parse import urlparse
 from pathlib import Path
+from find_photo import GoogleImageFinder
 
 class XAutomation:
-    def __init__(self):
+    def __init__(self, user_data_dir="./chrome-data"):
         self.playwright = None
         self.browser = None
         self.page = None
-        self.user_data_dir = "./chrome-data"
+        self.user_data_dir = user_data_dir
 
     def start(self):
-        """Initialize the browser using saved session"""
+        """Initialize the browser"""
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.user_data_dir,
-            headless=False,
+            headless=False
         )
         self.page = self.browser.new_page()
         self.page.goto('https://twitter.com/home')
@@ -77,9 +78,9 @@ class XAutomation:
                 headers=headers, 
                 stream=True, 
                 timeout=10,
-                verify=True  # Enable SSL verification
+                verify=True
             )
-            response.raise_for_status()  # Raise exception for bad status codes
+            response.raise_for_status()
             
             # Map content types to extensions
             extensions = {
@@ -91,21 +92,19 @@ class XAutomation:
             content_type = response.headers.get('content-type', '').lower()
             ext = extensions.get(content_type, '.jpg')
             
-            # Create temporary file that persists until we're done
+            # Create temporary file
             temp_file = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
             
-            # Download in chunks to handle large files
+            # Download in chunks
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     temp_file.write(chunk)
             temp_file.close()
             
             return temp_file.name
-        except requests.exceptions.RequestException as e:
-            print(f"Error downloading image: {e}")
-            return None
+            
         except Exception as e:
-            print(f"Unexpected error while downloading image: {e}")
+            print(f"Error downloading image: {e}")
             return None
 
     def post_tweet_with_image(self, text, image_path):
@@ -173,45 +172,79 @@ class XAutomation:
                 os.unlink(temp_file)
 
     def close(self):
+        """Close browser and playwright"""
         if self.browser:
             self.browser.close()
         if self.playwright:
             self.playwright.stop()
 
-    def post_thread(self, tweets):
-        """
-        Post a thread of tweets
-        """
+    def post_thread(self, tweets, image_queries=None):
         try:
-            # Click tweet button to open compose window
+            # Navigate to X
+            self.page.goto('https://twitter.com/home')
+            time.sleep(3)
+            print("Navigated to X")
+            
+            # If we have image queries, get the images first
+            image_paths = []
+            if image_queries:
+                finder = GoogleImageFinder(browser=self.browser)
+                finder.start()
+                try:
+                    image_paths = finder.download_images_for_thread(image_queries)
+                finally:
+                    finder.close()
+
+            print("Downloaded images")
+            
+            # Post first tweet
             tweet_input = self.page.wait_for_selector('[data-testid="tweetTextarea_0"]')
             tweet_input.fill(tweets[0])
             
-            # Add remaining tweets to thread
-            for tweet in tweets[1:]:
-                # Click the + button to add new tweet
-                add_button = self.page.wait_for_selector('[data-testid="addButton"]')
-                add_button.click()
+            # Handle first image if available
+            if image_paths and len(image_paths) > 0:
+                file_input = self.page.locator('[data-testid="fileInput"]').first
+                file_input.set_input_files(image_paths[0])
+                time.sleep(2)
+            
+            # After first tweet, click the button to create a thread
+            create_thread_button = self.page.locator('[data-testid="addButton"]').first
+            create_thread_button.click()
+            time.sleep(2)
+            
+            # Now add remaining tweets to the thread
+            for i in range(1, len(tweets)):
+                # Get the correct tweet box for the thread
+                new_tweet_box = self.page.locator(f'[data-testid="tweetTextarea_{i}"]').first
+                new_tweet_box.click()
+                new_tweet_box.fill(tweets[i])
+                time.sleep(1)
                 
-                # Wait for and fill the new tweet textarea
-                tweet_number = tweets.index(tweet)
-                tweet_input = self.page.wait_for_selector(f'[data-testid="tweetTextarea_{tweet_number}"]')
-                tweet_input.fill(tweet)
-                time.sleep(1)  # Small wait between tweets
+                # Handle image for this tweet if available
+                if image_paths and i < len(image_paths):
+                    # Find the file input within the current tweet's composition area
+                    # Look for the file input that's after the current tweet textarea
+                    current_tweet = self.page.locator(f'[data-testid="tweetTextarea_{i}"]')
+                    file_input = current_tweet.locator('xpath=./following::input[@data-testid="fileInput"]').first
+                    file_input.set_input_files(image_paths[i])
+                    time.sleep(2)
+                
+                # If there are more tweets to add, click the append button
+                if i < len(tweets) - 1:
+                    append_button = self.page.locator('[data-testid="appendButton"]').first
+                    append_button.click()
+                    time.sleep(2)
             
-            # Wait for and click Post all button - using the correct selector
-            time.sleep(1)  # Wait for button to become interactive
-            post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')  # Changed from tweetButtonInline
-            print(f"Found button with text: {post_button.inner_text()}")
+            # Post the entire thread
+            post_button = self.page.locator('[data-testid="tweetButton"]').first
             post_button.click()
-            print("Clicked post button")
-            
-            # Wait for post to complete
             time.sleep(3)
+            
+            print("Thread posted successfully!")
             
         except Exception as e:
             print(f"Error posting thread: {e}")
-
+            raise
 
 def display_menu():
     print("\n=== X Automation Menu ===")
@@ -246,9 +279,15 @@ def main():
     "2/7 In the early days (UFC 1-4), fighters went bare-knuckle! It was raw and controversial. No gloves, no rules! 👊💥",
     "3/7 Some fighters like Art Jimmerson showed up wearing ONE boxing glove! Talk about unique style. 🥊😅",
     # ... more tweets
-]
+            ]
+            image_queries = [
+        "UFC 1 no gloves fighting historical",
+        "UFC gloves evolution 1997",
+        "Modern UFC gloves design"
+    ]
+            
             print("\nPosting your thread of tweets...")
-            bot.post_thread(tweet_texts)
+            bot.post_thread(tweet_texts, image_queries)
             
         elif choice == "4":
             print("\nClosing the browser...")
