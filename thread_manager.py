@@ -212,4 +212,47 @@ class ThreadManager:
                 )
         except Exception as e:
             print(f"Error during image search: {e}")
-        return None 
+        return None
+
+    def post_existing_thread(self, folder_name):
+        """Post a thread from an existing folder"""
+        try:
+            # Construct the full path
+            thread_dir = os.path.join("threads", folder_name)
+            thread_file = os.path.join(thread_dir, "thread.md")
+            
+            # Verify the folder and file exist
+            if not os.path.exists(thread_file):
+                print(f"Error: Thread file not found at {thread_file}")
+                return
+            
+            # Load thread data from markdown
+            thread_data = self._load_thread_from_markdown(thread_dir)
+            
+            # Get list of image files
+            image_dir = os.path.join(thread_dir, "images")
+            if os.path.exists(image_dir):
+                image_files = sorted([
+                    os.path.join(image_dir, f) 
+                    for f in os.listdir(image_dir) 
+                    if f.startswith("tweet_")
+                ])
+            else:
+                image_files = []
+            
+            # Start the browser session
+            self.x_bot.start()
+            
+            # Post the thread
+            print("Posting thread...")
+            self.x_bot.post_thread(
+                tweets=thread_data['tweets'],
+                image_paths=image_files
+            )
+            
+            print("Thread posted successfully!")
+            
+        except Exception as e:
+            print(f"Error posting existing thread: {e}")
+        finally:
+            self.x_bot.close() 

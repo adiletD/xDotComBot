@@ -181,6 +181,29 @@ class XAutomation:
         if self.playwright:
             self.playwright.stop()
 
+    def _has_hashtag(self, text):
+        """Check if text contains a hashtag"""
+        return '#' in text
+
+    def _handle_hashtag_overlay(self, tweet_input):
+        """Handle hashtag overlay by pressing escape and moving cursor"""
+        try:
+            # Get text content using evaluate
+            text = tweet_input.evaluate('el => el.textContent')
+            if self._has_hashtag(text):
+                print("Hashtag detected, dismissing overlay...")
+                tweet_input.press('Escape')
+                tweet_input.press('Home')  # Move cursor to start
+                time.sleep(1)
+        except Exception as e:
+            print(f"Error handling hashtag overlay: {e}")
+
+    def _ends_with_hashtag(self, text: str) -> bool:
+        """Check if the text ends with a hashtag"""
+        # Split by whitespace and check if last word starts with #
+        words = text.strip().split()
+        return bool(words) and words[-1].startswith('#')
+
     def post_thread(self, tweets, image_paths=None):
         try:
             # Navigate to X
@@ -188,32 +211,53 @@ class XAutomation:
             time.sleep(3)
             print("Navigated to X")
             
+            # Log all available image paths at the start
+            if image_paths:
+                print("\nAvailable image paths:")
+                for idx, path in enumerate(image_paths):
+                    print(f"Image {idx}: {path} (exists: {os.path.exists(path)})")
+            
             # Post first tweet
             tweet_input = self.page.wait_for_selector('[data-testid="tweetTextarea_0"]')
-            # tweet_input.click()  # Need to click first
             tweet_input.fill(tweets[0])
-            # time.sleep(1)
+            time.sleep(1)
             
             # Handle first image if available
             if image_paths and len(image_paths) > 0:
                 print(f"Setting input files for image {image_paths[0]}")
                 file_input = 'input[accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime"]'
                 self.page.set_input_files(file_input, image_paths[0])
-                # file_input.set_input_files(image_paths[0])
                 time.sleep(2)
+            
+            # Move focus away from first tweet before clicking add
+            tweet_input.press('Tab')
+            time.sleep(1)
             
             # After first tweet, click the button to create a thread
             print("Clicking the add button to create a thread")
-            create_thread_button = self.page.wait_for_selector('[data-testid="addButton"]')
-            create_thread_button.click()
-            time.sleep(2)
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    create_thread_button = self.page.wait_for_selector('[data-testid="addButton"]', timeout=5000)
+                    if create_thread_button:
+                        create_thread_button.click(force=True)
+                        time.sleep(2)
+                        break
+                except Exception as e:
+                    print(f"Attempt {attempt + 1} failed: {str(e)}")
+                    if attempt == max_attempts - 1:
+                        raise Exception("Failed to click add button after multiple attempts")
+                    time.sleep(2)
             
             # Now add remaining tweets to the thread
             for i in range(1, len(tweets)):
-                print(f"Adding tweet {i+1} to the thread")
-                # Get the correct tweet box for the thread
+                print(f"\nAdding tweet {i+1} to the thread")
+                
+                # Wait for and focus on the new tweet box
                 new_tweet_box = self.page.wait_for_selector(f'[data-testid="tweetTextarea_{i}"]')
-                # new_tweet_box.click()
+                new_tweet_box.click()
+                time.sleep(1)
+                
                 new_tweet_box.fill(tweets[i])
                 time.sleep(1)
                 
@@ -228,14 +272,20 @@ class XAutomation:
                         file_input.set_input_files(image_path)
                         time.sleep(1)
                 
+                # Only press Tab if tweet ends with a hashtag
+                if self._ends_with_hashtag(tweets[i]):
+                    print(f"Tweet {i+1} ends with hashtag, pressing Tab to avoid overlay")
+                    new_tweet_box.press('Tab')
+                    time.sleep(1)
+                
                 # If there are more tweets to add, click the append button
                 if i < len(tweets) - 1:
                     add_button = self.page.wait_for_selector('[data-testid="addButton"]')
-                    add_button.click()
-                    time.sleep(1)
+                    add_button.click(force=True)
+                    time.sleep(2)
             
-           # Post the entire thread
-            post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')  # Changed from tweetButtonInline
+            # Post the entire thread
+            post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')
             post_button.click()
             time.sleep(3)
             
