@@ -25,8 +25,8 @@ class ThreadGenerator:
                   Requirements:
                   - Each tweet should be numbered (1/{num_tweets})
                   - Each tweet must include an image description in [IMG: description] format. The image description should be of an image that is 
-                  likely to exist on the internet. We can not afford to photoshop images. If its regarding a particular person then put his name and surname as well
-                  - Keep tweets within character limit
+                  likely to exist on the internet. We can not afford to photoshop images. If its regarding a particular person then put his name and surname as well. Also avoid stock type images, instead always give priority to images with real people and real events that happenged in the past
+                  - Keep tweets within character limit (280 characters max)
                   - The first tweet should be a hook, perhaps mentioning the most interesting fact about the topic or a questions or a statement that will make the reader want to read the rest of the thread
                   - Make the thread informative and engaging
                   - If there is any factual information information make sure it is accurate

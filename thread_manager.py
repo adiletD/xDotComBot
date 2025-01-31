@@ -12,6 +12,10 @@ class ThreadManager:
         self.x_bot = XAutomation()
         
     def create_and_post_thread(self, topic):
+        auto_confirm = input("Auto-confirm all images? (y/n): ").lower() == 'y'
+        return self._create_and_post_thread(topic, auto_confirm_images=auto_confirm)
+    
+    def _create_and_post_thread(self, topic, auto_confirm_images=False):
         """Main workflow to generate and post a thread"""
         try:
             # 1. Generate thread content
@@ -37,7 +41,7 @@ class ThreadManager:
             self.x_bot.start()
             
             # Now pass the browser instance to handle images
-            image_paths = self._handle_images(thread_data, self.x_bot.browser)
+            image_paths = self._handle_images(thread_data, self.x_bot.browser, auto_confirm_images)
             if not image_paths:
                 return
             
@@ -132,7 +136,7 @@ class ThreadManager:
             'thread_dir': thread_dir
         }
     
-    def _handle_images(self, thread_data, browser):
+    def _handle_images(self, thread_data, browser, auto_confirm_images=False):
         finder = GoogleImageFinder(browser=browser)
         finder.start()
         final_paths = []
@@ -167,7 +171,7 @@ class ThreadManager:
                 while True:
                     if current_path:
                         print(f"Downloaded image for tweet {i+1}: {current_path}")
-                        if self._confirm_image(i+1):
+                        if auto_confirm_images or self._confirm_image(i+1):
                             final_paths.append(current_path)
                             break
                     

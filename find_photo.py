@@ -41,23 +41,37 @@ class GoogleImageFinder:
             self.page.goto(url, wait_until='networkidle')
             self.page.wait_for_selector('.H8Rx8c', timeout=10000)
             
-            first_image = self.page.locator('.H8Rx8c img').first
-            first_image.click()
-            time.sleep(2)
+            def try_get_image(image_element):
+                """Helper to get full image URL"""
+                try:
+                    image_element.click()
+                    time.sleep(2)
+                    full_image = self.page.locator('img[class*="iPVvYb"]').first
+                    return full_image.get_attribute('src')
+                except Exception as e:
+                    print(f"Error getting full image URL: {e}")
+                    return None
             
-            image_url = first_image.get_attribute('src')
-            
-            if image_url and image_url.startswith('data:'):
-                full_image = self.page.locator('img[class*="iPVvYb"]').first
-                actual_url = full_image.get_attribute('src')
-                if actual_url:
-                    image_url = actual_url
+            # Try first 5 images
+            for i in range(5):
+                try:
+                    print(f"Trying image {i+1}...")
+                    image = self.page.locator('.H8Rx8c img').nth(i)
+                    image_url = try_get_image(image)
                     
-            return image_url
+                    if image_url:
+                        print(f"Successfully found image {i+1}")
+                        return image_url
+                except Exception as e:
+                    print(f"Failed to get image {i+1}: {e}")
+                    continue
+            
+            print("All 5 image attempts failed")
+            return None
             
         except Exception as e:
             print(f"Error searching for image: {e}")
-            return None 
+            return None
 
     def download_images_for_thread(self, queries, thread_id=None, output_dir="thread_images"):
         thread_id = thread_id or datetime.now().strftime("%Y%m%d_%H%M%S")
