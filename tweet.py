@@ -185,24 +185,82 @@ class XAutomation:
         """Check if text contains a hashtag"""
         return '#' in text
 
-    def _handle_hashtag_overlay(self, tweet_input):
-        """Handle hashtag overlay by pressing escape and moving cursor"""
+    def _handle_hashtag_overlay(self, element):
+        """Handle hashtag overlay only when it appears"""
         try:
-            # Get text content using evaluate
-            text = tweet_input.evaluate('el => el.textContent')
-            if self._has_hashtag(text):
-                print("Hashtag detected, dismissing overlay...")
-                tweet_input.press('Escape')
-                tweet_input.press('Home')  # Move cursor to start
-                time.sleep(1)
+            # Only press Tab to move focus away
+            element.press('Tab')
+            time.sleep(0.5)
         except Exception as e:
-            print(f"Error handling hashtag overlay: {e}")
+            print(f"Error handling hashtag: {e}")
 
     def _ends_with_hashtag(self, text: str) -> bool:
         """Check if the text ends with a hashtag"""
         # Split by whitespace and check if last word starts with #
         words = text.strip().split()
         return bool(words) and words[-1].startswith('#')
+
+    def _split_hashtag_content(self, text):
+        """Split text into content and hashtag if it ends with a hashtag"""
+        if not self._ends_with_hashtag(text):
+            return text, None
+            
+        words = text.split()
+        hashtag = words[-1]  # Get the last word (hashtag)
+        content = ' '.join(words[:-1])  # Get everything except hashtag
+        return content, hashtag
+
+    def _check_and_dismiss_overlay(self, current_tweet_box=None):
+        """Check for hashtag overlay and dismiss it if present"""
+        try:
+            # Try multiple selectors to find the overlay
+            overlay_selectors = [
+                'div[role="listbox"]',
+                'div[data-testid="typeaheadDropdown"]',
+                'div[data-testid="typeaheadOverlay"]',
+                'div[role="menu"]'
+            ]
+            
+            for selector in overlay_selectors:
+                try:
+                    overlay = self.page.locator(selector)
+                    if overlay.is_visible():
+                        print(f"Hashtag overlay detected with selector {selector}, dismissing...")
+                        
+                        # Click in the thread area to dismiss overlay
+                        self.page.click('div[data-testid="cellInnerDiv"]')
+                        time.sleep(0.5)
+                        
+                        # Verify overlay is gone
+                        if not overlay.is_visible():
+                            print("Overlay dismissed successfully")
+                            return True
+                except Exception as e:
+                    continue
+            
+            return False
+        except Exception as e:
+            print(f"Error checking for overlay: {e}")
+            return False
+
+    def _fill_tweet_safely(self, element, text):
+        """Fill tweet content safely handling hashtags"""
+        content, hashtag = self._split_hashtag_content(text)
+        
+        # Fill main content first
+        element.click()
+        time.sleep(0.5)
+        
+        if hashtag:
+            # Fill everything and add a space at the end to dismiss overlay
+            full_text = f"{content} {hashtag} "  # Note the extra space at the end
+            element.fill(full_text)
+            time.sleep(0.5)
+            # Don't remove the space - let it stay to keep overlay dismissed
+        else:
+            # If no hashtag, just fill the content normally
+            element.fill(text)
+            time.sleep(0.5)
 
     def post_thread(self, tweets, image_paths=None):
         try:
@@ -211,16 +269,9 @@ class XAutomation:
             time.sleep(3)
             print("Navigated to X")
             
-            # Log all available image paths at the start
-            if image_paths:
-                print("\nAvailable image paths:")
-                for idx, path in enumerate(image_paths):
-                    print(f"Image {idx}: {path} (exists: {os.path.exists(path)})")
-            
             # Post first tweet
             tweet_input = self.page.wait_for_selector('[data-testid="tweetTextarea_0"]')
-            tweet_input.fill(tweets[0])
-            time.sleep(1)
+            self._fill_tweet_safely(tweet_input, tweets[0])
             
             # Handle first image if available
             if image_paths and len(image_paths) > 0:
@@ -229,20 +280,31 @@ class XAutomation:
                 self.page.set_input_files(file_input, image_paths[0])
                 time.sleep(2)
             
-            # Move focus away from first tweet before clicking add
-            tweet_input.press('Tab')
-            time.sleep(1)
+            # Check for overlay before clicking add button
+            self._check_and_dismiss_overlay(tweet_input)
             
             # After first tweet, click the button to create a thread
             print("Clicking the add button to create a thread")
-            max_attempts = 3
+            max_attempts = 5
             for attempt in range(max_attempts):
                 try:
-                    create_thread_button = self.page.wait_for_selector('[data-testid="addButton"]', timeout=5000)
-                    if create_thread_button:
-                        create_thread_button.click(force=True)
+                    add_button = self.page.wait_for_selector(
+                        '[data-testid="addButton"]',
+                        timeout=5000,
+                        state='visible'
+                    )
+                    
+                    if add_button:
+                        add_button.click(force=True)
                         time.sleep(2)
-                        break
+                        
+                        # Verify a new tweet box appeared
+                        if self.page.locator('[data-testid="tweetTextarea_1"]').is_visible():
+                            print("Successfully added new tweet box")
+                            break
+                        else:
+                            print("New tweet box not visible after click, retrying...")
+                    
                 except Exception as e:
                     print(f"Attempt {attempt + 1} failed: {str(e)}")
                     if attempt == max_attempts - 1:
@@ -253,17 +315,12 @@ class XAutomation:
             for i in range(1, len(tweets)):
                 print(f"\nAdding tweet {i+1} to the thread")
                 
-                # Wait for and focus on the new tweet box
+                # Wait for the new tweet box
                 new_tweet_box = self.page.wait_for_selector(f'[data-testid="tweetTextarea_{i}"]')
-                new_tweet_box.click()
-                time.sleep(1)
-                
-                new_tweet_box.fill(tweets[i])
-                time.sleep(1)
+                self._fill_tweet_safely(new_tweet_box, tweets[i])
                 
                 # Handle image for this tweet if available
                 if image_paths and i < len(image_paths):
-                    # Check if image exists for this specific tweet
                     image_path = image_paths[i]
                     image_name = Path(image_path).name
                     if f"tweet_{i}" in image_name and os.path.exists(image_path):
@@ -272,29 +329,66 @@ class XAutomation:
                         file_input.set_input_files(image_path)
                         time.sleep(1)
                 
-                # Only press Tab if tweet ends with a hashtag
-                if self._ends_with_hashtag(tweets[i]):
-                    print(f"Tweet {i+1} ends with hashtag, pressing Tab to avoid overlay")
-                    new_tweet_box.press('Tab')
-                    time.sleep(1)
+                # Check for overlay before proceeding
+                self._check_and_dismiss_overlay(new_tweet_box)
                 
                 # If there are more tweets to add, click the append button
                 if i < len(tweets) - 1:
+                    print("Clicking add button for next tweet...")
                     add_button = self.page.wait_for_selector('[data-testid="addButton"]')
                     add_button.click(force=True)
                     time.sleep(2)
             
-            time.sleep(2)
-            # Post the entire thread
-            post_button = self.page.wait_for_selector('[data-testid="tweetButton"]')
-            post_button.click()
-            time.sleep(3)
+            # Check for overlay before final post
+            last_tweet_box = self.page.locator(f'[data-testid="tweetTextarea_{len(tweets)-1}"]')
+            self._check_and_dismiss_overlay(last_tweet_box)
+            
+            # Post the entire thread with retries
+            max_post_attempts = 5
+            for attempt in range(max_post_attempts):
+                try:
+                    post_button = self.page.wait_for_selector('[data-testid="tweetButton"]', timeout=5000)
+                    if post_button.is_enabled():
+                        post_button.click(force=True)
+                        time.sleep(3)
+                        break
+                except Exception as e:
+                    print(f"Post attempt {attempt + 1} failed: {str(e)}")
+                    if attempt == max_post_attempts - 1:
+                        raise Exception("Failed to click post button after multiple attempts")
+                    time.sleep(2)
             
             print("Thread posted successfully!")
             display_menu()
             
         except Exception as e:
             print(f"Error posting thread: {e}")
+            raise
+
+    def test_hashtag_handling(self):
+        """Test method to verify hashtag handling in threads"""
+        try:
+            # Test tweets with hashtags at the end
+            test_tweets = [
+                "First tweet testing hashtag handling #test",  # First tweet ends with hashtag
+                "Second tweet in the middle",
+                "Third tweet also has hashtag #testing",
+                "Fourth tweet normal",
+                "Last tweet ends with hashtag #final"  # Last tweet ends with hashtag
+            ]
+            
+            print("\nStarting hashtag handling test...")
+            print("Test tweets:")
+            for i, tweet in enumerate(test_tweets, 1):
+                print(f"{i}. {tweet}")
+            
+            # Post the test thread
+            self.post_thread(tweets=test_tweets)
+            
+            print("\nHashtag handling test completed!")
+            
+        except Exception as e:
+            print(f"Error during hashtag test: {e}")
             raise
 
 def display_menu():
@@ -307,80 +401,79 @@ def display_menu():
 
 def main():
     # Test post_thread directly
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        # Test tweets
-        tweets = [
-            "1/7 Test tweet one",
-            "2/7 Test tweet two",
-            "3/7 Test tweet three",
-            "4/7 Test tweet four",
-            "5/7 Test tweet five",
-            "6/7 Test tweet six",
-            "7/7 Test tweet seven"
-        ]
-        
-        # Initialize XAutomation
-        bot = XAutomation()
-        bot.start()
-        
-        try:
-            # Test post_thread with some sample images
-            image_paths = [
-                "threads/thread_20250130_154145/images/tweet_0.png",
-                "threads/thread_20250130_154145/images/tweet_1.jpg",
-                "threads/thread_20250130_154145/images/tweet_2.webp",
-                "threads/thread_20250130_154145/images/tweet_3.jpg",
-                "threads/thread_20250130_154145/images/tweet_4.jpg",
-                "threads/thread_20250130_154145/images/tweet_5.jpg",
-                "threads/thread_20250130_154145/images/tweet_6.jpg"
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "test":
+            # Test tweets
+            tweets = [
+                "1/7 Test tweet one",
+                "2/7 Test tweet two",
+                "3/7 Test tweet three",
+                "4/7 Test tweet four",
+                "5/7 Test tweet five",
+                "6/7 Test tweet six",
+                "7/7 Test tweet seven"
             ]
             
-            print("Testing post_thread function...")
-            bot.post_thread(tweets=tweets, image_paths=image_paths)
+            # Initialize XAutomation
+            bot = XAutomation()
+            bot.start()
             
-        except Exception as e:
-            print(f"Error during test: {e}")
-        finally:
-            bot.close()
-        return
-
-    # # Original main code
-    # bot = XAutomation()
-    
-    # # manager = ThreadManager()
-
-
-    # while True:
-    #     print("\nOptions:")
-    #     print("1. Create and post a new thread")
-    #     print("2. Post from an existing thread file")
-    #     print("3. Generate thread preview only")
-    #     print("4. Exit")
-        
-    #     choice = input("\nChoice: ")
-        
-    #     if choice == "1":
-    #         topic = input("\nWhat would you like the thread to be about? ")
-    #         manager.create_and_post_thread(topic)
-            
-    #     elif choice == "2":
-    #         thread_file = input("\nEnter the path to the thread file: ")
-    #         if os.path.exists(thread_file):
-    #             manager.post_from_file(thread_file)
-    #         else:
-    #             print("\nFile not found!")
+            try:
+                # Test post_thread with some sample images
+                image_paths = [
+                    "threads/thread_20250130_154145/images/tweet_0.png",
+                    "threads/thread_20250130_154145/images/tweet_1.jpg",
+                    "threads/thread_20250130_154145/images/tweet_2.webp",
+                    "threads/thread_20250130_154145/images/tweet_3.jpg",
+                    "threads/thread_20250130_154145/images/tweet_4.jpg",
+                    "threads/thread_20250130_154145/images/tweet_5.jpg",
+                    "threads/thread_20250130_154145/images/tweet_6.jpg"
+                ]
                 
-    #     elif choice == "3":
-    #         topic = input("\nWhat would you like the thread to be about? ")
-    #         manager.preview_thread(topic)
-            
-    #     elif choice == "4":
-    #         print("\nClosing the browser...")
-    #         bot.close()
-    #         break
-            
-    #     else:
-    #         print("\nInvalid option. Please try again.")
+                print("Testing post_thread function...")
+                bot.post_thread(tweets=tweets, image_paths=image_paths)
+                
+            except Exception as e:
+                print(f"Error during test: {e}")
+            finally:
+                bot.close()
+            return
+        elif sys.argv[1] == "hashtag_test":
+            # Test hashtag handling
+            bot = XAutomation()
+            bot.start()
+            try:
+                bot.test_hashtag_handling()
+            finally:
+                bot.close()
+            return
+
+    # Original main code
+    bot = XAutomation()
+    
+    while True:
+        choice = display_menu()
+        
+        if choice == "1":
+            text = input("\nEnter your tweet: ")
+            bot.post_tweet(text)
+        elif choice == "2":
+            text = input("\nEnter your tweet: ")
+            image_url = input("Enter image URL: ")
+            bot.post_tweet_with_image(text, image_url)
+        elif choice == "3":
+            # Get number of tweets
+            num_tweets = int(input("\nHow many tweets in the thread? "))
+            tweets = []
+            for i in range(num_tweets):
+                tweet = input(f"\nEnter tweet {i+1}: ")
+                tweets.append(tweet)
+            bot.post_thread(tweets)
+        elif choice == "4":
+            print("\nExiting...")
+            break
+        else:
+            print("\nInvalid choice!")
 
 if __name__ == "__main__":
     main()
