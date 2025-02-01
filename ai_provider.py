@@ -35,6 +35,9 @@ class PerplexityProvider(AIProvider):
     def generate_completion(self, prompt: str) -> str:
         """Generate completion using Perplexity API"""
         try:
+            print("\n🤖 Generating content...")
+            print("⏳ This may take a few moments...\n")
+            
             messages = [
                 {
                     "role": "system",
@@ -51,10 +54,11 @@ class PerplexityProvider(AIProvider):
                 messages=messages,
             )
             
+            print("✅ Content generation complete!\n")
             return response.choices[0].message.content
             
         except Exception as e:
-            print(f"Error generating completion: {e}")
+            print(f"❌ Error generating completion: {e}")
             return ""
 
 class AnthropicProvider(AIProvider):
